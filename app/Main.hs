@@ -12,6 +12,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Set (cartesianProduct)
 import qualified Data.Maybe
+import Graphics.Win32 (ColorFormat)
 
 validateInput :: String -> Int -> Bool
 validateInput str len = length str == len && notElem ' ' str
@@ -29,48 +30,49 @@ greenHints guess green = do
   if '-' `elem` helpGreen
     then
       if length indexes /= 1
-        then "🟩 you already guessed the letters at indexes " ++ foldl1 (\acc x -> (acc ++ [',']) ++ x) indexes ++ "\n"
-        else "🟩 you already guessed the letter at index " ++ head indexes ++ "\n"
+        then toEmoji Green :" you already guessed the letters at indexes " ++ foldl1 (\acc x -> (acc ++ [',']) ++ x) indexes ++ "\n"
+        else toEmoji Green :" you already guessed the letter at index " ++ head indexes ++ "\n"
     else ""
 
 yellowHints :: String -> String -> String
 yellowHints guess yellow = do
   let letters = foldl (\acc x -> if x `notElem` guess then if null acc then acc ++ [x] else acc ++ [',', x] else acc) [] yellow
   if not $ null letters
-    then "🟨 these letters are known to appear: " ++ letters ++ "\n"
+    then toEmoji Yellow :" these letters are known to appear: " ++ letters ++ "\n"
     else ""
 
 grayHints :: String -> String -> String
 grayHints guess gray = do
   let letters = foldl (\acc x -> if x `elem` guess then if null acc then acc ++ [x] else acc ++ [',', x] else acc) [] gray
   if not $ null letters
-    then "⬜ these letters are known to be useless: " ++ letters ++ "\n"
+    then toEmoji Gray :" these letters are known to be useless: " ++ letters ++ "\n"
     else ""
 
-dictHints :: String -> [String] -> String 
+dictHints :: String -> [String] -> String
 dictHints guess words = if guess `notElem` words
-  then "🟥 this word is not in the dictionary\n"
+  then toEmoji Red : " this word is not in the dictionary\n"
   else ""
 
-createResult :: String -> String -> String
+printResult :: [Color] -> String
+printResult = map toEmoji
+
+createResult :: String -> String -> [Color]
 createResult guess todaysWord = do
-  let mapWithGreens = fst $ foldl (\(acc, ind) (x,y) -> if x == y then ( Map.insert ind (x, '🟩') acc, ind + 1) else (acc, ind + 1)) (Map.empty, 0) (zip guess todaysWord)
-  let mapWithYellows = foldl (\acc (x,y) -> if x `elem` todaysWord && Map.lookup y mapWithGreens == Nothing && x `notElem` foldl (\acc (x,y) -> acc ++ [x]) [] (Map.elems mapWithGreens) 
-                                              then Map.insert y (x,'🟨') acc 
-                                              else acc) 
-                              mapWithGreens 
+  let mapWithGreens = fst $ foldl (\(acc, ind) (x,y) -> if x == y then ( Map.insert ind (x, Green) acc, ind + 1) else (acc, ind + 1)) (Map.empty, 0) (zip guess todaysWord)
+  let mapWithYellows = foldl (\acc (x,y) -> if x `elem` todaysWord && Map.lookup y mapWithGreens == Nothing && x `notElem` foldl (\acc (x,y) -> acc ++ [x]) [] (Map.elems mapWithGreens)
+                                              then Map.insert y (x, Yellow) acc
+                                              else acc)
+                              mapWithGreens
                               (zip guess [0..])
   foldl
     ( \acc x ->
         if Map.lookup x mapWithYellows == Nothing
-          then acc ++ ['⬜']
-          else acc ++ [snd (Data.Maybe.fromMaybe (' ', ' ') (Map.lookup x mapWithYellows))]
+          then acc ++ [Gray]
+          else acc ++ [snd (Data.Maybe.fromMaybe (' ', Gray) (Map.lookup x mapWithYellows))]
     )
     []
     [0 .. (length todaysWord - 1)]
-  --let mapWithGrays = foldl (\acc x -> if Map.lookup x mapWithYellows == Nothing then Map.insert x (' ', '⬜') acc  else acc) mapWithYellows [0..(length todaysWord-1)]
-  --foldl (\acc (x,y) -> acc ++ [y]) [] (Map.elems mapWithGrays)
-  
+
 
 
 playTurnEasy :: String -> Int -> [String] -> String -> String -> String -> IO ()
@@ -85,12 +87,12 @@ playTurnEasy todaysWord len words green yellow gray = do
       putStr $ greenHints guess green
       putStr $ yellowHints guess yellow
       putStr $ grayHints guess gray
-      if result == replicate len '🟩'
+      if result == replicate len Green
         then do
-          putStrLn result
+          putStrLn $ printResult result
           putStrLn "\nyou win!"
         else do
-          putStrLn $ "\n" ++ result ++ "\n" ++ foldl (\acc x -> acc ++ [x, ' ']) [] guess
+          putStrLn $ "\n" ++ printResult result ++ "\n" ++ foldl (\acc x -> acc ++ [x, ' ']) [] guess
           playTurnEasy
             todaysWord
             len
@@ -99,7 +101,7 @@ playTurnEasy todaysWord len words green yellow gray = do
             (nub $ yellow ++ foldl (\acc x -> if x `elem` todaysWord then acc ++ [x] else acc) [] guess)
             (nub $ gray ++ foldl (\acc x -> if x `notElem` todaysWord then acc ++ [x] else acc) [] guess)
     else do
-      putStrLn $ "invalid input, try again, the length is " ++ show len
+      putStrLn $ ">> invalid input, try again, the length is " ++ show len
       playTurnEasy todaysWord len words green yellow gray
 
 playTurn :: String -> Int -> IO ()
@@ -107,18 +109,18 @@ playTurn todaysWord len = do
   putStrLn ">> enter your guess:"
   guess <- getLine
   putStr "\n"
-  let result = zipWith (\x y -> if x == y then '🟩' else if x `elem` todaysWord then '🟨' else '⬜') guess todaysWord
+  let result = createResult guess todaysWord
   if validateInput guess len
     then do
-      if result == replicate (length todaysWord) '🟩'
+      if result == replicate len Green
         then do
-          putStrLn result
+          putStrLn $ printResult result
           putStrLn "\nyou win!"
         else do
-          putStrLn $ "\n" ++ result ++ "\n" ++ foldl (\acc x -> acc ++ [x, ' ']) [] guess
+          putStrLn $ "\n" ++ printResult result ++ "\n" ++ foldl (\acc x -> acc ++ [x, ' ']) [] guess
           playTurn todaysWord len
     else do
-      putStrLn $ "invalid input, try again, the length is " ++ show len
+      putStrLn $ ">> invalid input, try again, the length is " ++ show len
       playTurn todaysWord len
 
 playTurnHard :: String -> Int -> IO ()
@@ -126,18 +128,18 @@ playTurnHard todaysWord len = do
   putStrLn ">> enter your guess:"
   guess <- getLine
   putStr "\n"
-  let result = zipWith (\x y -> if x == y then '🟩' else if x `elem` todaysWord then '🟨' else '⬜') guess todaysWord
+  let result = createResult guess todaysWord
   if validateInput guess len
     then do
-      if result == replicate (length todaysWord) '🟩'
+      if result == replicate len Green
         then do
-          putStrLn result
+          putStrLn $ printResult result
           putStrLn "\nyou win!"
         else do
-          putStrLn $ "\n" ++ result ++ "\n" ++ foldl (\acc x -> acc ++ [x, ' ']) [] guess
+          putStrLn $ "\n" ++ printResult result ++ "\n" ++ foldl (\acc x -> acc ++ [x, ' ']) [] guess
           playTurn todaysWord len
     else do
-      putStrLn $ "invalid input, try again, the length is " ++ show len
+      putStrLn $ ">> invalid input, try again, the length is " ++ show len
       playTurn todaysWord len
 
 readLenFromConsole :: IO Int
@@ -173,6 +175,19 @@ data Mode
   = Easy
   | Normal
   | Hard
+
+data Color
+  = Green
+  | Yellow
+  | Gray
+  | Red
+  deriving (Enum, Eq, Show)
+
+toEmoji a = case a of
+  Green -> '🟩'
+  Yellow -> '🟨'
+  Gray -> '⬜'
+  Red -> '🟥'
 
 main :: IO ()
 main = do
