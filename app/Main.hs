@@ -5,14 +5,14 @@
 module Main where
 
 import System.IO (hSetEncoding, stdout, utf8)
-import System.Random (Random (randomR), getStdRandom)
+import System.Random (Random (randomR), RandomGen, getStdRandom, mkStdGen, newStdGen, randomRs, uniformR)
 import System.Win32.Console (setConsoleOutputCP)
 import Data.List (nub)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Set (cartesianProduct)
 import qualified Data.Maybe
-import Graphics.Win32 (ColorFormat)
+import Control.Monad (liftM)
 
 validateInput :: String -> Int -> Bool
 validateInput str len = length str == len && notElem ' ' str
@@ -59,21 +59,21 @@ printResult = map toEmoji
 createResult :: String -> String -> [Color]
 createResult guess todaysWord = do
   let mapWithGreens = fst $ foldl (\(acc, ind) (x,y) -> if x == y then ( Map.insert ind (x, Green) acc, ind + 1) else (acc, ind + 1)) (Map.empty, 0) (zip guess todaysWord)
-  let mapWithYellows = foldl (\acc (x,y) -> if x `elem` todaysWord && Map.lookup y mapWithGreens == Nothing && x `notElem` foldl (\acc (x,y) -> acc ++ [x]) [] (Map.elems mapWithGreens)
+  let mapWithYellows = foldl (\acc (x,y) -> if x `elem` todaysWord 
+                                              && x `notElem` foldl (\acc (x,y) -> acc ++ [x]) [] acc
+                                              && Map.lookup y mapWithGreens == Nothing 
                                               then Map.insert y (x, Yellow) acc
                                               else acc)
                               mapWithGreens
                               (zip guess [0..])
   foldl
     ( \acc x ->
-        if Map.lookup x mapWithYellows == Nothing
-          then acc ++ [Gray]
-          else acc ++ [snd (Data.Maybe.fromMaybe (' ', Gray) (Map.lookup x mapWithYellows))]
+        case Map.lookup x mapWithYellows of
+          Nothing -> acc ++ [Gray]
+          Just a -> acc ++ [snd a]
     )
     []
     [0 .. (length todaysWord - 1)]
-
-
 
 playTurnEasy :: String -> Int -> [String] -> String -> String -> String -> IO ()
 playTurnEasy todaysWord len words green yellow gray = do
@@ -158,6 +158,9 @@ readLenFromConsole = do
       else
         return len
 
+randString :: Int -> IO String
+randString n = fmap (take n . randomRs ('a', 'z')) newStdGen
+
 chooseMode :: IO Mode
 chooseMode = do
   putStrLn ">> choose a mode\n - 1. easy\n - 2. normal\n - 3. hard\n>> enter a number (1-3): "
@@ -183,6 +186,7 @@ data Color
   | Red
   deriving (Enum, Eq, Show)
 
+toEmoji :: Color -> Char
 toEmoji a = case a of
   Green -> '🟩'
   Yellow -> '🟨'
@@ -196,6 +200,7 @@ main = do
 
   file <- readFile "app/words_alpha.txt"
   let words = lines file
+  playTurnEasy "abbey" 5 words (replicate 3 ' ') [] []
 
   len <- readLenFromConsole
 
