@@ -10,7 +10,6 @@ import System.Win32.Console (setConsoleOutputCP)
 import Data.List (nub)
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Set (cartesianProduct)
 import qualified Data.Maybe
 import Control.Monad (liftM)
 
@@ -59,9 +58,9 @@ printResult = map toEmoji
 createResult :: String -> String -> [Color]
 createResult guess todaysWord = do
   let mapWithGreens = fst $ foldl (\(acc, ind) (x,y) -> if x == y then ( Map.insert ind (x, Green) acc, ind + 1) else (acc, ind + 1)) (Map.empty, 0) (zip guess todaysWord)
-  let mapWithYellows = foldl (\acc (x,y) -> if x `elem` todaysWord 
+  let mapWithYellows = foldl (\acc (x,y) -> if x `elem` todaysWord
                                               && x `notElem` foldl (\acc (x,y) -> acc ++ [x]) [] acc
-                                              && Map.lookup y mapWithGreens == Nothing 
+                                              && Map.lookup y mapWithGreens == Nothing
                                               then Map.insert y (x, Yellow) acc
                                               else acc)
                               mapWithGreens
@@ -123,24 +122,86 @@ playTurn todaysWord len = do
       putStrLn $ ">> invalid input, try again, the length is " ++ show len
       playTurn todaysWord len
 
-playTurnHard :: String -> Int -> IO ()
-playTurnHard todaysWord len = do
-  putStrLn ">> enter your guess:"
-  guess <- getLine
-  putStr "\n"
-  let result = createResult guess todaysWord
-  if validateInput guess len
-    then do
-      if result == replicate len Green
-        then do
-          putStrLn $ printResult result
-          putStrLn "\nyou win!"
-        else do
-          putStrLn $ "\n" ++ printResult result ++ "\n" ++ foldl (\acc x -> acc ++ [x, ' ']) [] guess
-          playTurn todaysWord len
+lie :: Color -> IO Color
+lie color = do
+  rand <- getStdRandom (randomR (0, 2))
+  let randColor = toEnum rand
+  if randColor /= color
+    then return randColor
+    else lie color
+
+
+lyingResult :: Map (Int, Char) Color -> String -> [Color] -> [IO Color]
+lyingResult map guess result =
+    foldl
+      ( \acc (i, x) ->
+          case Map.lookup (i, x) map of
+            Nothing -> acc ++ [lie (result !! i)]
+            Just a -> acc ++ [return a]
+      )
+      []
+      (zip [0 ..] guess)
+
+playTurnHard :: String -> Int -> Map (Int, Char) Color -> Bool -> Int -> Int -> IO ()
+playTurnHard todaysWord len map haveLied currTurn maxTurn =
+  if currTurn - 1 == maxTurn 
+    then putStrLn "u lose :/"
     else do
-      putStrLn $ ">> invalid input, try again, the length is " ++ show len
-      playTurn todaysWord len
+      putStrLn ">> enter your guess:"
+      guess <- getLine
+      putStr "\n"
+      let result = createResult guess todaysWord
+
+      if validateInput guess len
+        then do
+          if result == replicate len Green
+
+            then do
+              putStrLn $ printResult result
+              putStrLn "\nyou win!"
+
+            else do
+              if not haveLied && currTurn /= 1
+                then do
+                  rand <- getStdRandom (randomR (0, 2))
+                  print (rand :: Int)
+                  if (rand :: Int) == 1
+                    then do
+                      let resMonads = lyingResult map guess result
+                      res <- sequence resMonads
+                      putStrLn "lying"
+                      print map
+                      putStrLn $ "\n" ++ printResult result ++ "\n" ++ foldl (\acc x -> acc ++ [x, ' ']) [] guess
+                      putStrLn $ "\n" ++ printResult res ++ "\n" ++ foldl (\acc x -> acc ++ [x, ' ']) [] guess
+                      playTurnHard
+                        todaysWord
+                        len
+                        Map.empty
+                        True
+                        (currTurn + 1)
+                        maxTurn
+                    else do
+                      putStrLn $ "\n" ++ printResult result ++ "\n" ++ foldl (\acc x -> acc ++ [x, ' ']) [] guess
+                      playTurnHard
+                        todaysWord
+                        len
+                        (foldl (\acc r@(i, x) -> Map.insert r (result !! i) map) map (zip [0..] guess))
+                        haveLied
+                        (currTurn + 1)
+                        maxTurn
+                else do
+                  putStrLn $ "\n" ++ printResult result ++ "\n" ++ foldl (\acc x -> acc ++ [x, ' ']) [] guess
+                  playTurnHard
+                    todaysWord
+                    len
+                    (foldl (\acc r@(i, x) -> Map.insert r (result !! i) acc) map (zip [0..] guess))
+                    haveLied
+                    (currTurn + 1)
+                    maxTurn
+
+        else do
+          putStrLn $ ">> invalid input, try again, the length is " ++ show len
+          playTurnHard todaysWord len map haveLied (currTurn + 1) maxTurn
 
 readLenFromConsole :: IO Int
 readLenFromConsole = do
@@ -157,9 +218,6 @@ readLenFromConsole = do
         readLenFromConsole
       else
         return len
-
-randString :: Int -> IO String
-randString n = fmap (take n . randomRs ('a', 'z')) newStdGen
 
 chooseMode :: IO Mode
 chooseMode = do
@@ -200,7 +258,7 @@ main = do
 
   file <- readFile "app/words_alpha.txt"
   let words = lines file
-  playTurnEasy "abbey" 5 words (replicate 3 ' ') [] []
+  --playTurnEasy "abbey" 5 words (replicate 3 ' ') [] []
 
   len <- readLenFromConsole
 
@@ -215,6 +273,6 @@ main = do
   case mode of
     Easy -> playTurnEasy todaysWord len words (replicate len ' ') [] []
     Normal -> playTurn todaysWord len
-    Hard -> playTurnHard todaysWord len
+    Hard -> playTurnHard todaysWord len Map.empty False 1 6
 
 
