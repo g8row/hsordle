@@ -6,16 +6,17 @@ module Main where
 
 import System.IO (hSetEncoding, stdout, utf8)
 import System.Random (randomR, getStdRandom)
-import System.Win32.Console (setConsoleOutputCP)
-import Data.List (nub)
+import System.Info (os)
+import Data.List (nub, intersect, (\\))
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Control.Lens
 
 validateInput :: String -> Int -> Bool
 validateInput str len = length str == len && notElem ' ' str
 
-getTodaysWord :: [String] -> Int -> IO String
-getTodaysWord words len = do
+getRandomWord :: [String] -> Int -> IO String
+getRandomWord words len = do
   let filteredWords = filter (\x -> length x == len) words
   index <- getStdRandom (randomR (0, length filteredWords))
   return $ filteredWords !! index
@@ -55,22 +56,19 @@ printResult = map toEmoji
 
 createResult :: String -> String -> [Color]
 createResult guess todaysWord = do
-  let mapWithGreens = fst $ foldl (\(acc, ind) (x,y) -> if x == y then ( Map.insert ind (x, Green) acc, ind + 1) else (acc, ind + 1)) (Map.empty, 0) (zip guess todaysWord)
-  let mapWithYellows = foldl (\acc (x,y) -> if x `elem` todaysWord
-                                              && x `notElem` foldl (\acc (x,y) -> acc ++ [x]) [] acc
-                                              && Map.lookup y mapWithGreens == Nothing
-                                              then Map.insert y (x, Yellow) acc
-                                              else acc)
-                              mapWithGreens
-                              (zip guess [0..])
-  foldl
-    ( \acc x ->
-        case Map.lookup x mapWithYellows of
-          Nothing -> acc ++ [Gray]
-          Just a -> acc ++ [snd a]
-    )
-    []
-    [0 .. (length todaysWord - 1)]
+  let mapWithGreensAndLeftovers = foldl (\(map, left) (x,y) -> 
+                                              if x == y 
+                                                then ( Map.insert (length left + Map.size map) Green map, left) 
+                                                else (map, y : left)) 
+                                  (Map.empty, []) 
+                                  (zip guess todaysWord)
+  Map.elems$ fst $ foldl (\(map, left) (x,i) -> if  Map.lookup i map == Nothing
+                                                  then if x `elem` left   
+                                                        then (Map.insert i Yellow map, filter (/= x) left) 
+                                                        else (Map.insert i Gray map, left)
+                                                  else (map, left))
+                          mapWithGreensAndLeftovers
+                          (zip guess [0..])
 
 playTurnEasy :: String -> Int -> [String] -> String -> String -> String -> Int -> Int -> IO ()
 playTurnEasy todaysWord len words green yellow gray currTurn maxTurn = do
@@ -87,7 +85,7 @@ playTurnEasy todaysWord len words green yellow gray currTurn maxTurn = do
           putStr $ greenHints guess green
           putStr $ yellowHints guess yellow
           putStr $ grayHints guess gray
-          if result == replicate len Green
+          if guess == todaysWord
             then do
               putStrLn $ printResult result
               putStrLn "\nyou win!"
@@ -117,7 +115,7 @@ playTurn todaysWord len currTurn maxTurn = do
       let result = createResult guess todaysWord
       if validateInput guess len
         then do
-          if result == replicate len Green
+          if guess == todaysWord
             then do
               putStrLn $ printResult result
               putStrLn "\nyou win!"
@@ -160,7 +158,7 @@ playTurnHard todaysWord len map haveLied currTurn maxTurn =
 
       if validateInput guess len
         then do
-          if result == replicate len Green
+          if guess == todaysWord
             then do
               putStrLn $ printResult result
               putStrLn "\nyou win!"
@@ -232,34 +230,111 @@ data Color
 
 toEmoji :: Color -> Char
 toEmoji a = case a of
-  Green -> '🟩'
-  Yellow -> '🟨'
+  Green -> '\129001' --'🟩'
+  Yellow -> '\129000' --'🟨'
   Gray -> '⬜'
-  Red -> '🟥'
+  Red -> '\128997' --'🟥'
+
+fromEmoji :: Char -> Color
+fromEmoji a = case a of
+  '\129001' -> Green --'🟩'
+  '\129000' -> Yellow --'🟨'
+  '⬜' -> Gray
+  '\128997' -> Red --'🟥'
+
+fromLetter :: Char -> Color
+fromLetter a = case a of
+  'g' -> Green --'🟩'
+  'y' -> Yellow --'🟨'
+  'w' -> Gray
+  'r' -> Red --'🟥'
+
+maxTurns :: Int
+maxTurns = 6
+
+--------------------------------------------------------
+
+isPresentAt :: String -> Int -> Char -> Bool
+isPresentAt word ind l = case word ^? element ind of
+                              Nothing -> False
+                              Just a -> a == l
+
+getRandomGuess :: [String] -> [Char] -> [(Int, Char)] -> [(Int, Char)] -> Int -> IO (Maybe String)
+getRandomGuess words grays yellows greens len = do
+  let filteredWords = filter (\x -> length x == len 
+                                    && (intersect x grays) == []
+                                    && foldl (\acc (_,l) -> acc && l `elem` x) True yellows
+                                    && foldl (\acc (i,l) -> acc && not (isPresentAt x i l)) True yellows 
+                                    && foldl (\acc (i,l) -> acc && isPresentAt x i l) True greens) 
+                              words
+  if length filteredWords == 1
+    then return $ Just $  head filteredWords
+    else do
+      index <- getStdRandom (randomR (0, length filteredWords - 1))
+      return $ filteredWords ^? element index
+
+
+interpretColors :: String -> [Color]
+interpretColors = map fromLetter
+
+playHelper :: String -> String -> [String] -> [Char] -> [(Int, Char)] -> [(Int, Char)] -> Int -> IO ()
+playHelper todaysWord prevGuess words grays yellows greens len = do
+  putStrLn $ "answer: " ++ todaysWord
+  putStrLn $ "guess:  " ++ prevGuess
+  putStrLn ">> input a list of colors according to the guess"
+  userInput <- getLine
+  if length userInput /= len
+    then do
+      putStrLn ">> invalid input, try again"
+      playHelper todaysWord prevGuess words grays yellows greens len
+    else do
+      let result = interpretColors userInput
+      let yellows' = foldl (\acc r@(i, _) -> if result !! i == Yellow then acc ++ [r] else acc) yellows (zip [0..] prevGuess)
+      let greens' = foldl (\acc r@(i, _) -> if result !! i == Green then acc ++ [r] else acc) greens (zip [0..] prevGuess)
+      let grays' = foldl (\acc (x, i) -> if result !! i == Gray then acc ++ [x] else acc) grays (zip prevGuess [0..]) \\ map snd yellows'
+      print grays'
+      print yellows'
+      print greens'
+      print prevGuess
+      guess <- getRandomGuess words grays' yellows' greens' len
+      case guess of
+        Nothing -> do
+          putStrLn ">> no words match your answer, try again"
+          playHelper todaysWord prevGuess words grays yellows greens len
+        Just guessStr -> do
+          if guessStr == todaysWord 
+            then putStrLn ">> we won woooo !!!"
+            else do
+              playHelper todaysWord guessStr words grays' yellows' greens' len 
 
 main :: IO ()
 main = do
   hSetEncoding stdout utf8
-  setConsoleOutputCP 65001
-
-  let maxTurns = 6
+  --if os == windows
+    --  then System.Win32.Console.setConsoleOutputCP 65001
+      --else putStr ""
 
   file <- readFile "app/words_alpha.txt"
   let words = lines file
 
   len <- readLenFromConsole
 
+  
+
   file <- readFile "app/words_alpha.txt"
   let words = lines file
-  todaysWord <- getTodaysWord words len
+  todaysWord <- getRandomWord words len
+  firstGuess <- getRandomWord words len
+  
+  playHelper todaysWord firstGuess words [] [] [] len  
+  
+  -- mode <- chooseMode
 
-  mode <- chooseMode
+  -- putStrLn todaysWord
 
-  putStrLn todaysWord
-
-  case mode of
-    Easy -> playTurnEasy todaysWord len words (replicate len ' ') [] [] 1 maxTurns
-    Normal -> playTurn todaysWord len 1 maxTurns
-    Hard -> playTurnHard todaysWord len Map.empty False 1 maxTurns
+  --case mode of
+  --  Easy -> playTurnEasy todaysWord len words (replicate len ' ') [] [] 1 maxTurns
+  --  Normal -> playTurn todaysWord len 1 maxTurns
+  --  Hard -> playTurnHard todaysWord len Map.empty False 1 maxTurns
 
 
