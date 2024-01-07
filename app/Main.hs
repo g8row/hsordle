@@ -5,307 +5,14 @@
 module Main where
 
 import System.IO (hSetEncoding, stdout, utf8)
-import System.Random (randomR, getStdRandom)
-import System.Info (os)
-import Data.List (nub, intersect, (\\))
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Control.Lens
-
-validateInput :: String -> Int -> Bool
-validateInput str len = length str == len && notElem ' ' str
-
-getRandomWord :: [String] -> Int -> IO String
-getRandomWord words len = do
-  let filteredWords = filter (\x -> length x == len) words
-  index <- getStdRandom (randomR (0, length filteredWords))
-  return $ filteredWords !! index
-
-greenHints :: String -> String -> String
-greenHints guess green = do
-  let helpGreen = zipWith (\x y -> if y /= ' ' then if x == y then x else '-' else ' ') guess green
-  let indexes = fst (foldl (\acc x -> if x == '-' then (fst acc ++ [show (snd acc)], snd acc + 1) else (fst acc, snd acc + 1)) ([], 0) helpGreen)
-  if '-' `elem` helpGreen
-    then
-      if length indexes /= 1
-        then toEmoji Green :" you already guessed the letters at indexes " ++ foldl1 (\acc x -> (acc ++ [',']) ++ x) indexes ++ "\n"
-        else toEmoji Green :" you already guessed the letter at index " ++ head indexes ++ "\n"
-    else ""
-
-yellowHints :: String -> String -> String
-yellowHints guess yellow = do
-  let letters = foldl (\acc x -> if x `notElem` guess then if null acc then acc ++ [x] else acc ++ [',', x] else acc) [] yellow
-  if not $ null letters
-    then toEmoji Yellow :" these letters are known to appear: " ++ letters ++ "\n"
-    else ""
-
-grayHints :: String -> String -> String
-grayHints guess gray = do
-  let letters = foldl (\acc x -> if x `elem` guess then if null acc then acc ++ [x] else acc ++ [',', x] else acc) [] gray
-  if not $ null letters
-    then toEmoji Gray :" these letters are known to be useless: " ++ letters ++ "\n"
-    else ""
-
-dictHints :: String -> [String] -> String
-dictHints guess words = if guess `notElem` words
-  then toEmoji Red : " this word is not in the dictionary\n"
-  else ""
-
-printResult :: [Color] -> String
-printResult = map toEmoji
-
-createResult :: String -> String -> [Color]
-createResult guess todaysWord = do
-  let mapWithGreensAndLeftovers = foldl (\(map, left) (x,y) -> 
-                                              if x == y 
-                                                then ( Map.insert (length left + Map.size map) Green map, left) 
-                                                else (map, y : left)) 
-                                  (Map.empty, []) 
-                                  (zip guess todaysWord)
-  Map.elems$ fst $ foldl (\(map, left) (x,i) -> if  Map.lookup i map == Nothing
-                                                  then if x `elem` left   
-                                                        then (Map.insert i Yellow map, filter (/= x) left) 
-                                                        else (Map.insert i Gray map, left)
-                                                  else (map, left))
-                          mapWithGreensAndLeftovers
-                          (zip guess [0..])
-
-playTurnEasy :: String -> Int -> [String] -> String -> String -> String -> Int -> Int -> IO ()
-playTurnEasy todaysWord len words green yellow gray currTurn maxTurn = do
-  if currTurn - 1 == maxTurn
-    then putStrLn "u lose :/"
-    else do
-      putStrLn ">> enter your guess:"
-      guess <- getLine
-      putStr "\n"
-      let result = createResult guess todaysWord
-      if validateInput guess len
-        then do
-          putStr $ dictHints guess words
-          putStr $ greenHints guess green
-          putStr $ yellowHints guess yellow
-          putStr $ grayHints guess gray
-          if guess == todaysWord
-            then do
-              putStrLn $ printResult result
-              putStrLn "\nyou win!"
-            else do
-              putStrLn $ "\n" ++ printResult result ++ "\n" ++ foldl (\acc x -> acc ++ [x, ' ']) [] guess
-              playTurnEasy
-                todaysWord
-                len
-                words
-                (zipWith3 (\x y z -> if x == y then x else if z == y then z else ' ') guess todaysWord green)
-                (nub $ yellow ++ foldl (\acc x -> if x `elem` todaysWord then acc ++ [x] else acc) [] guess)
-                (nub $ gray ++ foldl (\acc x -> if x `notElem` todaysWord then acc ++ [x] else acc) [] guess)
-                (currTurn + 1) 
-                maxTurn
-        else do
-          putStrLn $ ">> invalid input, try again, the length is " ++ show len
-          playTurnEasy todaysWord len words green yellow gray (currTurn + 1) maxTurn
-
-playTurn :: String -> Int -> Int -> Int -> IO ()
-playTurn todaysWord len currTurn maxTurn = do
-  if currTurn - 1 == maxTurn
-    then putStrLn "u lose :/"
-    else do
-      putStrLn ">> enter your guess:"
-      guess <- getLine
-      putStr "\n"
-      let result = createResult guess todaysWord
-      if validateInput guess len
-        then do
-          if guess == todaysWord
-            then do
-              putStrLn $ printResult result
-              putStrLn "\nyou win!"
-            else do
-              putStrLn $ "\n" ++ printResult result ++ "\n" ++ foldl (\acc x -> acc ++ [x, ' ']) [] guess
-              playTurn todaysWord len (currTurn + 1) maxTurn
-        else do
-          putStrLn $ ">> invalid input, try again, the length is " ++ show len
-          playTurn todaysWord len (currTurn + 1) maxTurn
-
-lie :: Color -> IO Color
-lie color = do
-  rand <- getStdRandom (randomR (0, 2))
-  let randColor = toEnum rand
-  if randColor /= color
-    then return randColor
-    else lie color
-
-
-lyingResult :: Map (Int, Char) Color -> String -> [Color] -> [IO Color]
-lyingResult map guess result =
-    foldl
-      ( \acc (i, x) ->
-          case Map.lookup (i, x) map of
-            Nothing -> acc ++ [lie (result !! i)]
-            Just a -> acc ++ [return a]
-      )
-      []
-      (zip [0 ..] guess)
-
-playTurnHard :: String -> Int -> Map (Int, Char) Color -> Bool -> Int -> Int -> IO ()
-playTurnHard todaysWord len map haveLied currTurn maxTurn =
-  if currTurn - 1 == maxTurn 
-    then putStrLn "u lose :/"
-    else do
-      putStrLn ">> enter your guess:"
-      guess <- getLine
-      putStr "\n"
-      let result = createResult guess todaysWord
-
-      if validateInput guess len
-        then do
-          if guess == todaysWord
-            then do
-              putStrLn $ printResult result
-              putStrLn "\nyou win!"
-
-            else do
-              rand <- getStdRandom (randomR (0, 2))
-              if not haveLied && currTurn /= 1 && (rand :: Int) == 1
-                then do
-                      let resMonads = lyingResult map guess result
-                      res <- sequence resMonads
-                      --putStrLn "lying"
-                      --print map
-                      --putStrLn $ "\n" ++ printResult result ++ "\n" ++ foldl (\acc x -> acc ++ [x, ' ']) [] guess
-                      putStrLn $ "\n" ++ printResult res ++ "\n" ++ foldl (\acc x -> acc ++ [x, ' ']) [] guess
-                      playTurnHard todaysWord len Map.empty True (currTurn + 1) maxTurn
-                    else do
-                      putStrLn $ "\n" ++ printResult result ++ "\n" ++ foldl (\acc x -> acc ++ [x, ' ']) [] guess
-                      playTurnHard
-                        todaysWord
-                        len
-                        (foldl (\acc r@(i, x) -> Map.insert r (result !! i) acc) map (zip [0..] guess))
-                        haveLied
-                        (currTurn + 1)
-                        maxTurn
-                else do
-                  putStrLn $ ">> invalid input, try again, the length is " ++ show len
-                  playTurnHard todaysWord len map haveLied (currTurn + 1) maxTurn
-
-readLenFromConsole :: IO Int
-readLenFromConsole = do
-  putStrLn ">> choose length of word: "
-  line <- getLine
-  let len = (read line :: Int)
-  if len <= 0
-    then do
-      putStrLn ">> invalid input, choose length of word bigger than 0: "
-      readLenFromConsole
-    else if len >= 31
-      then do
-        putStrLn ">> invalid input, choose length of word smaller than 31: "
-        readLenFromConsole
-      else
-        return len
-
-chooseMode :: IO Mode
-chooseMode = do
-  putStrLn ">> choose a mode\n - 1. easy\n - 2. normal\n - 3. hard\n>> enter a number (1-3): "
-  line <- getLine
-  let mode = read line :: Int
-  case mode of
-    1 -> return Easy
-    2 -> return Normal
-    3 -> return Hard
-    _ -> do
-      putStrLn "\n>> invalid input, choose a number between 1 and 3"
-      chooseMode
-
-data Mode
-  = Easy
-  | Normal
-  | Hard
-
-data Color
-  = Green
-  | Yellow
-  | Gray
-  | Red
-  deriving (Enum, Eq, Show)
-
-toEmoji :: Color -> Char
-toEmoji a = case a of
-  Green -> '\129001' --'🟩'
-  Yellow -> '\129000' --'🟨'
-  Gray -> '⬜'
-  Red -> '\128997' --'🟥'
-
-fromEmoji :: Char -> Color
-fromEmoji a = case a of
-  '\129001' -> Green --'🟩'
-  '\129000' -> Yellow --'🟨'
-  '⬜' -> Gray
-  '\128997' -> Red --'🟥'
-
-fromLetter :: Char -> Color
-fromLetter a = case a of
-  'g' -> Green --'🟩'
-  'y' -> Yellow --'🟨'
-  'w' -> Gray
-  'r' -> Red --'🟥'
+import Utils
+import Wordle
+import Helper
 
 maxTurns :: Int
 maxTurns = 6
-
---------------------------------------------------------
-
-isPresentAt :: String -> Int -> Char -> Bool
-isPresentAt word ind l = case word ^? element ind of
-                              Nothing -> False
-                              Just a -> a == l
-
-getRandomGuess :: [String] -> [Char] -> [(Int, Char)] -> [(Int, Char)] -> Int -> IO (Maybe String)
-getRandomGuess words grays yellows greens len = do
-  let filteredWords = filter (\x -> length x == len 
-                                    && (intersect x grays) == []
-                                    && foldl (\acc (_,l) -> acc && l `elem` x) True yellows
-                                    && foldl (\acc (i,l) -> acc && not (isPresentAt x i l)) True yellows 
-                                    && foldl (\acc (i,l) -> acc && isPresentAt x i l) True greens) 
-                              words
-  if length filteredWords == 1
-    then return $ Just $  head filteredWords
-    else do
-      index <- getStdRandom (randomR (0, length filteredWords - 1))
-      return $ filteredWords ^? element index
-
-
-interpretColors :: String -> [Color]
-interpretColors = map fromLetter
-
-playHelper :: String -> String -> [String] -> [Char] -> [(Int, Char)] -> [(Int, Char)] -> Int -> IO ()
-playHelper todaysWord prevGuess words grays yellows greens len = do
-  putStrLn $ "answer: " ++ todaysWord
-  putStrLn $ "guess:  " ++ prevGuess
-  putStrLn ">> input a list of colors according to the guess"
-  userInput <- getLine
-  if length userInput /= len
-    then do
-      putStrLn ">> invalid input, try again"
-      playHelper todaysWord prevGuess words grays yellows greens len
-    else do
-      let result = interpretColors userInput
-      let yellows' = foldl (\acc r@(i, _) -> if result !! i == Yellow then acc ++ [r] else acc) yellows (zip [0..] prevGuess)
-      let greens' = foldl (\acc r@(i, _) -> if result !! i == Green then acc ++ [r] else acc) greens (zip [0..] prevGuess)
-      let grays' = foldl (\acc (x, i) -> if result !! i == Gray then acc ++ [x] else acc) grays (zip prevGuess [0..]) \\ map snd yellows'
-      print grays'
-      print yellows'
-      print greens'
-      print prevGuess
-      guess <- getRandomGuess words grays' yellows' greens' len
-      case guess of
-        Nothing -> do
-          putStrLn ">> no words match your answer, try again"
-          playHelper todaysWord prevGuess words grays yellows greens len
-        Just guessStr -> do
-          if guessStr == todaysWord 
-            then putStrLn ">> we won woooo !!!"
-            else do
-              playHelper todaysWord guessStr words grays' yellows' greens' len 
 
 main :: IO ()
 main = do
@@ -319,22 +26,21 @@ main = do
 
   len <- readLenFromConsole
 
-  
-
   file <- readFile "app/words_alpha.txt"
   let words = lines file
   todaysWord <- getRandomWord words len
   firstGuess <- getRandomWord words len
   
-  playHelper todaysWord firstGuess words [] [] [] len  
-  
-  -- mode <- chooseMode
-
   -- putStrLn todaysWord
-
-  --case mode of
-  --  Easy -> playTurnEasy todaysWord len words (replicate len ' ') [] [] 1 maxTurns
-  --  Normal -> playTurn todaysWord len 1 maxTurns
-  --  Hard -> playTurnHard todaysWord len Map.empty False 1 maxTurns
+  
+  game <- chooseGame
+  case game of
+    Helper -> playHelper todaysWord firstGuess words [] [] [] len  
+    Wordle -> do
+      mode <- chooseMode
+      case mode of
+        Easy -> playTurnEasy todaysWord len words (replicate len ' ') [] [] 1 maxTurns
+        Normal -> playTurn todaysWord len 1 maxTurns
+        Hard -> playTurnHard todaysWord len Map.empty False 1 maxTurns
 
 
