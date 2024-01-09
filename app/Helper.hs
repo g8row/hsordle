@@ -12,16 +12,18 @@ isPresentAt word ind l = case word ^? element ind of
                               Nothing -> False
                               Just a -> a == l
 
-getRandomGuess :: [String] -> [Char] -> [(Int, Char)] -> [(Int, Char)] -> Int -> IO (Maybe String)
-getRandomGuess words grays yellows greens len = do
-  let filteredWords = filter (\x -> length x == len 
-                                    && (intersect x grays) == []
-                                    && foldl (\acc (_,l) -> acc && l `elem` x) True yellows
-                                    && foldl (\acc (i,l) -> acc && not (isPresentAt x i l)) True yellows 
-                                    && foldl (\acc (i,l) -> acc && isPresentAt x i l) True greens) 
-                              words
+getFilteredWords :: [String] -> [Char] -> [(Int, Char)] -> [(Int, Char)] -> Int -> [String]
+getFilteredWords words grays yellows greens len = filter (\x -> length x == len 
+                                                              && (intersect x grays) == []
+                                                              && foldl (\acc (_,l) -> acc && l `elem` x) True yellows
+                                                              && foldl (\acc (i,l) -> acc && not (isPresentAt x i l)) True yellows 
+                                                              && foldl (\acc (i,l) -> acc && isPresentAt x i l) True greens) 
+                                                       words
+
+getRandomGuess :: [String] -> IO (Maybe String)
+getRandomGuess filteredWords = 
   if length filteredWords == 1
-    then return $ Just $  head filteredWords
+    then return $ Just $ head filteredWords
     else do
       index <- getStdRandom (randomR (0, length filteredWords - 1))
       return $ filteredWords ^? element index
@@ -49,7 +51,8 @@ playHelper todaysWord prevGuess words grays yellows greens len = do
       print yellows'
       print greens'
       print prevGuess
-      guess <- getRandomGuess words grays' yellows' greens' len
+      let filteredWords = getFilteredWords words grays' yellows' greens' len
+      guess <- getRandomGuess filteredWords
       case guess of
         Nothing -> do
           putStrLn ">> no words match your answer, try again"
@@ -58,4 +61,4 @@ playHelper todaysWord prevGuess words grays yellows greens len = do
           if guessStr == todaysWord 
             then putStrLn ">> we won woooo !!!"
             else do
-              playHelper todaysWord guessStr words grays' yellows' greens' len 
+              playHelper todaysWord guessStr filteredWords grays' yellows' greens' len 

@@ -31,7 +31,7 @@ main = do
   todaysWord <- getRandomWord words len
   firstGuess <- getRandomWord words len
   
-  -- putStrLn todaysWord
+  putStrLn todaysWord
   
   game <- chooseGame
   case game of

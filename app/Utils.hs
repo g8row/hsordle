@@ -24,7 +24,7 @@ createResult guess todaysWord = do
                                                 else (map, y : left)) 
                                   (Map.empty, []) 
                                   (zip guess todaysWord)
-  Map.elems$ fst $ foldl (\(map, left) (x,i) -> if  Map.lookup i map == Nothing
+  Map.elems $ fst $ foldl (\(map, left) (x,i) -> if  Map.lookup i map == Nothing
                                                   then if x `elem` left   
                                                         then (Map.insert i Yellow map, filter (/= x) left) 
                                                         else (Map.insert i Gray map, left)
