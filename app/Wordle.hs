@@ -5,6 +5,7 @@ import Data.List (nub, intersect, (\\))
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Utils
+    ( Color(..), validateInput, printResult, createResult, toEmoji )
 
 greenHints :: String -> String -> String
 greenHints guess green = do
@@ -14,7 +15,7 @@ greenHints guess green = do
     then
       if length indexes /= 1
         then toEmoji Green :" you already guessed the letters at indexes " ++ foldl1 (\acc x -> (acc ++ [',']) ++ x) indexes ++ "\n"
-        else toEmoji Green :" you already guessed the letter at index " ++ head indexes ++ "\n"
+        else let [x] = indexes in toEmoji Green :" you already guessed the letter at index " ++ x ++ "\n"
     else ""
 
 yellowHints :: String -> String -> String
@@ -36,12 +37,12 @@ dictHints guess words = if guess `notElem` words
   then toEmoji Red : " this word is not in the dictionary\n"
   else ""
 
-playTurnEasy :: String -> Int -> [String] -> String -> String -> String -> Int -> Int -> IO ()
+playTurnEasy :: String -> Int -> [String] -> [Char] -> [Char] -> [Char]  -> Int -> Int -> IO ()
 playTurnEasy todaysWord len words green yellow gray currTurn maxTurn = do
   if currTurn - 1 == maxTurn
-    then putStrLn "u lose :/"
+    then putStrLn $ todaysWord ++ " was the word, u lose :/"
     else do
-      putStrLn ">> enter your guess:"
+      putStrLn $ ">> you are on turn " ++ show (maxTurn - currTurn + 1) ++ ", enter your guess:"
       guess <- getLine
       putStr "\n"
       let result = createResult guess todaysWord
@@ -73,9 +74,9 @@ playTurnEasy todaysWord len words green yellow gray currTurn maxTurn = do
 playTurn :: String -> Int -> Int -> Int -> IO ()
 playTurn todaysWord len currTurn maxTurn = do
   if currTurn - 1 == maxTurn
-    then putStrLn "u lose :/"
+    then putStrLn $ todaysWord ++ " was the word, u lose :/"
     else do
-      putStrLn ">> enter your guess:"
+      putStrLn $ ">> you are on turn " ++ show (maxTurn - currTurn + 1) ++ ", enter your guess:"
       guess <- getLine
       putStr "\n"
       let result = createResult guess todaysWord
@@ -109,11 +110,11 @@ lyingResult map guess result = do
                 Nothing -> case foldl (\acc (ind, a) -> case Map.lookup (ind, a) map of
                                                             Nothing -> acc
                                                             Just a -> if a == Gray then 2 else 1)
-                                3
-                                (zip [0..] (replicate (length guess) x)) of
-                          1 -> acc ++ [return Yellow]
-                          2 -> acc ++ [return Gray]
-                          3 -> acc ++ [lie (result !! i)]
+                                      3
+                                      (zip [0..] (replicate (length guess) x)) of
+                                1 -> acc ++ [return Yellow]
+                                2 -> acc ++ [return Gray]
+                                3 -> acc ++ [lie (result !! i)]
                 Just a -> acc ++ [return a]
             )
             []
@@ -126,9 +127,9 @@ lyingResult map guess result = do
 playTurnHard :: String -> Int -> Map (Int, Char) Color -> Bool -> Int -> Int -> IO ()
 playTurnHard todaysWord len map haveLied currTurn maxTurn =
   if currTurn - 1 == maxTurn 
-    then putStrLn "u lose :/"
+    then putStrLn $ todaysWord ++ " was the word, u lose :/"
     else do
-      putStrLn ">> enter your guess:"
+      putStrLn $ ">> you are have " ++ show (maxTurn - currTurn + 1) ++ "turns left, enter your guess:"
       guess <- getLine
       putStr "\n"
       let result = createResult guess todaysWord
@@ -139,18 +140,14 @@ playTurnHard todaysWord len map haveLied currTurn maxTurn =
             then do
               putStrLn $ printResult result
               putStrLn "\nyou win!"
-
             else do
               rand <- getStdRandom (randomR (0, 2))
               if not haveLied && currTurn /= 1 && (rand :: Int) == 1
                 then do
                       res <- lyingResult map guess result
-                      --putStrLn "lying"
-                      --print map
-                      --putStrLn $ "\n" ++ printResult result ++ "\n" ++ foldl (\acc x -> acc ++ [x, ' ']) [] guess
                       putStrLn $ "\n" ++ printResult res ++ "\n" ++ foldl (\acc x -> acc ++ [x, ' ']) [] guess
                       playTurnHard todaysWord len Map.empty True (currTurn + 1) maxTurn
-                    else do
+                else do
                       putStrLn $ "\n" ++ printResult result ++ "\n" ++ foldl (\acc x -> acc ++ [x, ' ']) [] guess
                       playTurnHard
                         todaysWord
@@ -159,6 +156,6 @@ playTurnHard todaysWord len map haveLied currTurn maxTurn =
                         haveLied
                         (currTurn + 1)
                         maxTurn
-                else do
-                  putStrLn $ ">> invalid input, try again, the length is " ++ show len
-                  playTurnHard todaysWord len map haveLied (currTurn + 1) maxTurn
+        else do
+          putStrLn $ ">> invalid input, try again, the length is " ++ show len
+          playTurnHard todaysWord len map haveLied (currTurn + 1) maxTurn

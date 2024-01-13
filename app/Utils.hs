@@ -4,11 +4,10 @@ import System.Random (randomR, getStdRandom)
 import Data.Map (Map)
 import qualified Data.Map as Map
 
-getRandomWord :: [String] -> Int -> IO String
-getRandomWord words len = do
-  let filteredWords = filter (\x -> length x == len) words
-  index <- getStdRandom (randomR (0, length filteredWords))
-  return $ filteredWords !! index
+getRandomWord :: [String] -> IO String
+getRandomWord words = do
+  index <- getStdRandom (randomR (0, length words))
+  return $ words !! index
 
 validateInput :: String -> Int -> Bool
 validateInput str len = length str == len && notElem ' ' str
@@ -84,7 +83,7 @@ fromEmoji :: Char -> Color
 fromEmoji a = case a of
   '\129001' -> Green --'🟩'
   '\129000' -> Yellow --'🟨'
-  '⬜' -> Gray
+  '\11036' -> Gray -- '⬜'
   '\128997' -> Red --'🟥'
 
 fromLetter :: Char -> Color
