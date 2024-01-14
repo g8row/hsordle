@@ -1,11 +1,13 @@
 {-# LANGUAGE UnicodeSyntax #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+
 {-# HLINT ignore "Use isNothing" #-}
 
 module Main where
 
-import System.IO (hSetEncoding, stdout, utf8)
 import Play (play)
+import System.IO (hSetEncoding, stdout, utf8)
+import System.Win32.Console (setConsoleOutputCP)
 
 maxTurns :: Int
 maxTurns = 6
@@ -13,7 +15,5 @@ maxTurns = 6
 main :: IO ()
 main = do
   hSetEncoding stdout utf8
-  System.Win32.Console.setConsoleOutputCP 65001
+  setConsoleOutputCP 65001
   play
-
-
