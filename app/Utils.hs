@@ -1,8 +1,29 @@
 module Utils where
 
+import Data.List (nub, intersect, (\\))
 import System.Random (randomR, getStdRandom)
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Control.Lens ( (^?), element )
+
+elimFilter :: [String] -> [String]
+elimFilter filteredWords = 
+    snd $ foldl (\(i, acc) x -> 
+            let lenEliminated = length [word | word <- filteredWords, intersect word x /= []] in
+              if lenEliminated > i 
+                then (lenEliminated, [x]) 
+                else if lenEliminated == i
+                  then (i, x : acc)
+                  else (i, acc)) 
+          (0, []) 
+          filteredWords
+
+getMostEliminatingWord :: [String] -> IO (Maybe String)
+getMostEliminatingWord [] = return Nothing
+getMostEliminatingWord filteredWords = do
+  index <- getStdRandom (randomR (0, length mostElims - 1))
+  return $ mostElims ^? element index
+  where mostElims = (elimFilter filteredWords)
 
 getRandomWord :: [String] -> IO String
 getRandomWord words = do
@@ -40,7 +61,7 @@ readLenFromConsole = do
     then do
       putStrLn ">> invalid input, choose length of word bigger than 0: "
       readLenFromConsole
-    else if len >= 31
+    else if len >= 18
       then do
         putStrLn ">> invalid input, choose length of word smaller than 31: "
         readLenFromConsole

@@ -18,11 +18,11 @@ maintainer:         aliogu23@gmail.com
 
 extra-source-files: CHANGELOG.md
 
-executable wordle
+executable hsordle
     if(os(windows))
         main-is:          Main-windows.hs
         build-depends:    base >=4.9, lens, random, containers, Win32
-    elif(os(linux))
+    else
         main-is:          Main-linux.hs
         build-depends:    base >=4.9, lens, random, containers 
      

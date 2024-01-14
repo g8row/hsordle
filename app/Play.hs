@@ -5,6 +5,7 @@ import qualified Data.Map as Map
 import Utils
     ( Game(Wordle, Helper),
       Mode(Hard, Easy, Normal),
+      getMostEliminatingWord,
       getRandomWord,
       readLenFromConsole,
       chooseMode,
@@ -19,17 +20,16 @@ play :: IO()
 play = do
   len <- readLenFromConsole
 
-  file <- readFile "app/words_alpha.txt"
+  file <- readFile "app/words.txt"
   let words = filter (\x -> length x == len) (lines file)
   todaysWord <- getRandomWord words
-  
-  putStrLn todaysWord
-  
+    
   game <- chooseGame
   case game of
     Helper -> do
-      firstGuess <- getRandomWord words
-      playHelper todaysWord firstGuess words [] [] [] len maxTurns 
+      firstGuess <- getMostEliminatingWord words
+      let Just guess = firstGuess
+      playHelper todaysWord guess words [] [] [] len maxTurns 
     Wordle -> do
       mode <- chooseMode
       case mode of

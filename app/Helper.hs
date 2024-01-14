@@ -5,7 +5,7 @@ import System.Random (randomR, getStdRandom)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Utils
-    ( Color(Gray, Yellow, Green), createResult, fromLetter )
+    ( Color(Gray, Yellow, Green), createResult, fromLetter, getMostEliminatingWord)
 import Control.Lens ( (^?), element )
 
 isPresentAt :: String -> Int -> Char -> Bool
@@ -27,25 +27,6 @@ getRandomGuess filteredWords = do
       index <- getStdRandom (randomR (0, length filteredWords - 1))
       return $ filteredWords ^? element index
 
-elimFilter :: [String] -> [String]
-elimFilter filteredWords = 
-    snd $ foldl (\(i, acc) x -> 
-            let lenEliminated = length [word | word <- filteredWords, intersect word x /= []] in
-              if lenEliminated > i 
-                then (lenEliminated, [x]) 
-                else if lenEliminated == i
-                  then (i, x : acc)
-                  else (i, acc)) 
-          (0, []) 
-          filteredWords
-
-getMostEliminatingWord :: [String] -> IO (Maybe String)
-getMostEliminatingWord [] = return Nothing
-getMostEliminatingWord filteredWords = do
-  index <- getStdRandom (randomR (0, length mostElims - 1))
-  return $ mostElims ^? element index
-  where mostElims = (elimFilter filteredWords)
-
 
 interpretColors :: String -> [Color]
 interpretColors = map fromLetter
@@ -57,7 +38,7 @@ playHelper todaysWord prevGuess words grays yellows greens len turnsLeft = do
   putStrLn $ "guess:  " ++ prevGuess
   putStrLn $ ">> you have " ++ show turnsLeft ++ " turns left, input a list of colors according to the guess (w,y,g)"
   userInput <- getLine
-  if length userInput /= len || interpretColors userInput /= createResult prevGuess todaysWord
+  if length userInput /= len ||  foldl (\acc x -> acc || x `notElem` ['w', 'y', 'g']) False userInput || interpretColors userInput /= createResult prevGuess todaysWord
     then do
       putStrLn ">> invalid input, try again"
       playHelper todaysWord prevGuess words grays yellows greens len turnsLeft
@@ -74,6 +55,6 @@ playHelper todaysWord prevGuess words grays yellows greens len turnsLeft = do
           playHelper todaysWord prevGuess words grays yellows greens len turnsLeft
         Just guessStr -> do
           if guessStr == todaysWord 
-            then putStrLn ">> we won woooo !!!"
+            then putStrLn $ ">> hsordle guessed " ++ guessStr ++ ", we won woooo !!!"
             else do
               playHelper todaysWord guessStr (filter (/=guessStr) filteredWords) grays' yellows' greens' len (turnsLeft - 1) 
